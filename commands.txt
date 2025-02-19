@@ -1,0 +1,31 @@
+Run from Capstone base folder
+
+Method 3
+For clustering:  python GenerationPipeline/main.py --num_datapoints 200 --images_file_path "combined_dataset/" --sampling "sample_from_cluster" --num_clusters 3 --save_to "clustering_part4.json"
+
+
+Method 1
+for folder: python GenerationPipeline/main.py --num_datapoints 500 --images_file_path "anime_images/" --sampling "sample_from_folder"
+
+
+Method 2
+for combined folder: python GenerationPipeline/main.py --num_datapoints 500 --images_file_path "combined_dataset/" --sampling "sample_from_folder"
+python GenerationPipeline/main.py --num_datapoints 115 --images_file_path "combined_dataset/" --sampling "sample_from_folder"
+
+
+just change folder path based on whether you want to generate for only anime images (method 1) or for that combined dataset (method 2)
+
+
+
+EVALUATION
+
+python EvaluationPipeline/main.py --dataset_path “TestCode/human_bot_conversation.json" --output_path "evaluation_results0216.json"
+
+
+
+Merge Data files:
+python merge_dataset_json.py --input_files human_bot_conversation_part_0.json human_bot_conversation.json --output_file merged_dataset_test.json
+
+
+python merge_dataset_json.py --input_files ../clustering_part1_200_baisakhi.json ../clustering_part2_200_baisakhi.json ../clustering_part3_200_baisakhi.json ../clustering_part4_200_baisakhi.json ../clustering_part5_200_baisakhi.json --output_file clustered_dataset_1000_baisakhi.json
+
