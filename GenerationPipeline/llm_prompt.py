@@ -7,7 +7,8 @@ def generate_prompt(model_name, sampled_images):
     """ """
 
     load_dotenv()
-    API_KEY = os.getenv("GEMINI_API_KEY")
+    #API_KEY = os.getenv("GEMINI_API_KEY")
+    API_KEY = "AIzaSyC9GdLIneWE5XNKsF3MlIFJ5tuphGBc9X8"
     genai.configure(api_key=API_KEY)
 
     system_instruction = """ You are an expert at generating dialogues, following all the given constraints.
