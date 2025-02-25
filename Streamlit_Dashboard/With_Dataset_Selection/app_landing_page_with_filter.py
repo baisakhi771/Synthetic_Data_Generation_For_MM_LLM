@@ -4,16 +4,13 @@ import json
 import base64
 import matplotlib.pyplot as plt
 import seaborn as sns
+import io
 import plotly.express as px
 
-
-# ----------------- APP CONFIG -----------------
+# ----------------- SETUP MULTI-PAGE NAVIGATION -----------------
 st.set_page_config(page_title="Synthetic Data Generation for Multi-modal LLMs", layout="wide")
 
-# # Force Streamlit to apply a higher max message size
-# st.set_option("server.maxMessageSize", 5000)
-
-# ----------------- SIDEBAR NAVIGATION -----------------
+# Sidebar Navigation
 st.sidebar.title("🔗 Navigation")
 page = st.sidebar.radio("Go to:", ["🏠 Home", "📊 Dataset Explorer"])
 
@@ -46,61 +43,33 @@ if page == "🏠 Home":
     - 📥 **Download Filtered Dataset**
     """)
 
-
     st.info("🔄 Use the sidebar to navigate to the **Dataset Explorer**!")
 
 # ----------------- DATASET EXPLORER PAGE -----------------
 elif page == "📊 Dataset Explorer":
     st.title("📊 Dataset Explorer")
 
-    # Sidebar: Dataset Selection
-    st.sidebar.header("📂 Select Dataset Category")
-    dataset_category = st.sidebar.selectbox("Choose Dataset Type", ["Anime", "Celeb", "Meme", "Clustered", "Combined"])
-
-    # Define dataset file paths based on selection
-    dataset_paths = {
-        "Anime": "../Final_Datasets/anime.json",
-        "Celeb": "../Final_Datasets/celeb.json",
-        "Meme": "../Final_Datasets/meme.json",
-        "Clustered": "../Final_Datasets/clustering.json",
-        "Combined": "../Final_Datasets/combined_folder.json"
-    }
-
-    evaluation_paths = {
-        "Anime": "../Evaluation_result/clustering_part1_200_baisakhi_evaluation_results0224.json",
-        "Celeb": "../Evaluation_result/clustering_part1_200_baisakhi_evaluation_results0224.json",
-        "Meme": "../Evaluation_result/clustering_part1_200_baisakhi_evaluation_results0224.json",
-        "Clustered": "../Evaluation_result/clustering_part1_200_baisakhi_evaluation_results0224.json",
-        "Combined": "../Evaluation_result/clustering_part1_200_baisakhi_evaluation_results0224.json"
-    }
-
-    # ----------------- DATA LOADING FUNCTIONS -----------------
+    # Function to load and cache datasets
     @st.cache_data
-    # def load_conversation_data(json_file):
-    #     with open(json_file, "r") as file:
-    #         return pd.json_normalize(json.load(file), sep="_")
-    def load_conversation_data(json_file, chunk_size=500):
-        """
-        Lazily loads large conversation datasets in chunks to prevent memory overflow.
-        Returns only the first chunk.
-        """
+    def load_conversation_data(json_file):
+        """Loads conversation JSON data."""
         with open(json_file, "r") as file:
-            data = json.load(file)  # Load JSON normally
-    
-        df = pd.json_normalize(data, sep="_")  # Convert JSON to DataFrame
-        return df.iloc[:chunk_size]  # Load only the first `chunk_size` rows
+            return pd.json_normalize(json.load(file), sep="_")
 
     @st.cache_data
     def load_evaluation_data(json_file):
+        """Loads evaluation JSON data (scores only, no explanations)."""
         with open(json_file, "r") as file:
             data = json.load(file)
         
+        # Extract only numeric scores
         for entry in data:
             for key, value in entry["evaluation_scores"].items():
                 entry["evaluation_scores"][key] = value["score"]  # Keep only scores
         
         return pd.json_normalize(data, sep="_")
 
+    # Convert filtered DataFrame to JSON
     @st.cache_data
     def convert_df_to_json(df):
         return df.to_json(orient="records", indent=4)
@@ -109,24 +78,29 @@ elif page == "📊 Dataset Explorer":
     def decode_base64_image(encoded_string):
         """Decodes a base64 image and returns an HTML image tag."""
         return f'<img src="data:image/png;base64,{encoded_string}" style="width:50px;height:50px;" />' 
-    
-    
-    # Load selected dataset
-    conversation_data = load_conversation_data(dataset_paths[dataset_category])
-    evaluation_data = load_evaluation_data(evaluation_paths[dataset_category])
 
-    # Merge evaluation scores into conversation data
+    # Load datasets
+    conversation_data = load_conversation_data("../TestCode/human_bot_conversation_part_0.json")
+    evaluation_data = load_evaluation_data("../TestCode/conversation_evaluation_results_gemini.json")
+
+    # Merge evaluation scores into conversation data for better filtering
     merged_data = conversation_data.merge(evaluation_data, on="conversation_id", how="left")
 
-    # ----------------- FILTERING OPTIONS -----------------
+    # Sidebar Filters
     st.sidebar.header("🔍 Filter Options")
 
+    # Filter by Number of Images
     if "images" in merged_data.columns:
         image_counts = merged_data['images'].apply(len).unique()
         selected_image_count = st.sidebar.multiselect("Select Number of Images", image_counts, default=image_counts)
+    else:
+        st.sidebar.warning("⚠️ 'images' column not found. Skipping filter.")
+        selected_image_count = []
 
+    # Extract Score Columns
     score_columns = [col for col in evaluation_data.columns if "_score" in col]
 
+    # Select Score Metric
     selected_score = None
     if score_columns:
         selected_score = st.sidebar.selectbox("Filter by Score Metric", score_columns)
@@ -134,45 +108,38 @@ elif page == "📊 Dataset Explorer":
     else:
         st.sidebar.error("⚠️ No evaluation score columns found!")
 
+    # Filter by keyword in conversation
     search_text = st.sidebar.text_input("Search in Conversation")
 
     # Apply Filters
     filtered_conversations = merged_data.copy()
 
     if "images" in merged_data.columns and selected_image_count:
-        filtered_conversations = filtered_conversations[filtered_conversations['images'].apply(len).isin(selected_image_count)]
+        filtered_conversations = filtered_conversations[
+            filtered_conversations['images'].apply(len).isin(selected_image_count)
+        ]
 
     if selected_score and selected_score in merged_data.columns:
-        filtered_conversations = filtered_conversations[filtered_conversations[selected_score].between(min_score, max_score)]
+        filtered_conversations = filtered_conversations[
+            filtered_conversations[selected_score].between(min_score, max_score)
+        ]
+    elif selected_score:
+        st.warning(f"⚠️ Selected score column '{selected_score}' not found.")
 
     if search_text and "conversation" in merged_data.columns:
-        filtered_conversations = filtered_conversations[filtered_conversations["conversation"].str.contains(search_text, case=False, na=False)]
+        filtered_conversations = filtered_conversations[
+            filtered_conversations["conversation"].str.contains(search_text, case=False, na=False)
+        ]
+    elif search_text:
+        st.warning("⚠️ 'conversation' column not found. Skipping search filter.")
 
-    # ----------------- DISPLAY FILTERED DATA -----------------
-    # st.subheader("📊 Filtered Conversations")
-
-    # if not filtered_conversations.empty:
-    #     json_data = convert_df_to_json(filtered_conversations)
-    #     st.download_button("📥 Download Filtered Data (JSON)", data=json_data, file_name="filtered_dataset.json", mime="application/json")
-    #     st.dataframe(filtered_conversations)
-    # else:
-    #     st.warning("⚠️ No data matches your filters.")
-
-    # # ----------------- VISUALIZATIONS -----------------
-    # if not filtered_conversations.empty:
-    #     avg_scores = filtered_conversations[score_columns].mean().reset_index()
-    #     avg_scores.columns = ["Metric", "Average Score"]
-
-    #     avg_scores["Metric"] = avg_scores["Metric"].str.replace("evaluation_scores_", "").str.replace("_score", "").str.replace("_", " ").str.title()
-
+    # # Visualization: Dynamic Average Scores by Metric
+    # if not filtered_conversations.empty and score_columns:
+    #     filtered_avg_scores = filtered_conversations[score_columns].mean().reset_index()
+    #     filtered_avg_scores.columns = ["Metric", "Average Score"]
+        
     #     st.subheader("📊 Average Scores by Metric (Filtered Data)")
-    #     fig = px.bar(avg_scores, x="Metric", y="Average Score", color="Metric", text="Average Score")
-    #     st.plotly_chart(fig)
-
-    #     st.subheader("🔥 Heatmap of Evaluation Scores")
-    #     plt.figure(figsize=(10, 5))
-    #     sns.heatmap(filtered_conversations[score_columns].corr(), annot=True, cmap="coolwarm", fmt=".2f")
-    #     st.pyplot(plt)
+    #     st.bar_chart(filtered_avg_scores.set_index("Metric"))
 
     # ✅ Define evaluation score columns
     score_columns = [
@@ -260,5 +227,4 @@ elif page == "📊 Dataset Explorer":
 
     else:
         st.warning("⚠️ No data matches your filters.")
-
 
